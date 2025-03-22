@@ -17,11 +17,7 @@ use crate::{
         utils::DecodeMessageResult,
         Call,
         CallParams,
-        ConstructorReturnType,
-        CreateParams,
         DelegateCall,
-        FromAddr,
-        LimitParamsV2,
     },
     engine::on_chain::{
         EncodeScope,
@@ -33,21 +29,32 @@ use crate::{
         TopicsBuilderBackend,
     },
     hash::{
-        Blake2x128,
-        Blake2x256,
         CryptoHash,
         HashOutput,
         Keccak256,
         Sha2x256,
     },
     types::FromLittleEndian,
-    Clear,
     DecodeDispatch,
     DispatchError,
     EnvBackend,
     Environment,
     Result,
     TypedEnvBackend,
+};
+#[cfg(feature = "unstable-hostfn")]
+use crate::{
+    call::{
+        ConstructorReturnType,
+        CreateParams,
+        FromAddr,
+        LimitParamsV2,
+    },
+    hash::{
+        Blake2x128,
+        Blake2x256,
+    },
+    Clear,
 };
 use ink_primitives::{
     reflect::{
@@ -70,8 +77,10 @@ use pallet_revive_uapi::{
     ReturnFlags,
     StorageFlags,
 };
+#[cfg(feature = "unstable-hostfn")]
 use xcm::VersionedXcm;
 
+#[cfg(feature = "unstable-hostfn")]
 impl CryptoHash for Blake2x128 {
     fn hash(input: &[u8], output: &mut <Self as HashOutput>::Type) {
         type OutputType = [u8; 16];
@@ -84,6 +93,7 @@ impl CryptoHash for Blake2x128 {
     }
 }
 
+#[cfg(feature = "unstable-hostfn")]
 impl CryptoHash for Blake2x256 {
     fn hash(input: &[u8], output: &mut <Self as HashOutput>::Type) {
         type OutputType = [u8; 32];
@@ -104,7 +114,22 @@ impl CryptoHash for Sha2x256 {
             OutputType
         );
         let output: &mut OutputType = array_mut_ref!(output, 0, 32);
-        ext::hash_sha2_256(input, output);
+
+        const ADDR: [u8; 20] =
+            hex_literal::hex!("0000000000000000000000000000000000000002");
+        // todo return value?
+        let _ = ext::call(
+            CallFlags::empty(),
+            &ADDR,
+            u64::MAX, /* How much ref_time to devote for the execution. u64::MAX = use
+                       * all. */
+            u64::MAX, /* How much proof_size to devote for the execution. u64::MAX =
+                       * use all. */
+            &[u8::MAX; 32],                   // No deposit limit.
+            &U256::zero().to_little_endian(), // Value transferred to the contract.
+            input,
+            Some(&mut &mut output[..]),
+        );
     }
 }
 
@@ -143,6 +168,7 @@ where
 {
     type Output = (ScopedBuffer<'a>, &'a mut [u8]);
 
+    #[cfg(feature = "unstable-hostfn")]
     fn push_topic<T>(&mut self, topic_value: &T)
     where
         T: scale::Encode,
@@ -234,6 +260,7 @@ impl EnvBackend for EnvInstance {
         Ok(Some(decoded))
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn take_contract_storage<K, R>(&mut self, key: &K) -> Result<Option<R>>
     where
         K: scale::Encode,
@@ -251,6 +278,7 @@ impl EnvBackend for EnvInstance {
         Ok(Some(decoded))
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn contains_contract_storage<K>(&mut self, key: &K) -> Option<u32>
     where
         K: scale::Encode,
@@ -260,6 +288,7 @@ impl EnvBackend for EnvInstance {
         ext::contains_storage(STORAGE_FLAGS, key)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn clear_contract_storage<K>(&mut self, key: &K) -> Option<u32>
     where
         K: scale::Encode,
@@ -342,6 +371,7 @@ impl EnvBackend for EnvInstance {
         Ok(())
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn ecdsa_to_eth_address(
         &mut self,
         pubkey: &[u8; 33],
@@ -350,6 +380,7 @@ impl EnvBackend for EnvInstance {
         ext::ecdsa_to_eth_address(pubkey, output).map_err(Into::into)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn sr25519_verify(
         &mut self,
         signature: &[u8; 64],
@@ -359,6 +390,7 @@ impl EnvBackend for EnvInstance {
         ext::sr25519_verify(signature, message, pub_key).map_err(Into::into)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn call_chain_extension<I, T, E, ErrorCode, F, D>(
         &mut self,
         id: u32,
@@ -381,6 +413,7 @@ impl EnvBackend for EnvInstance {
         Ok(decoded)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn set_code_hash(&mut self, code_hash: &H256) -> Result<()> {
         ext::set_code_hash(code_hash.as_fixed_bytes());
         Ok(()) // todo
@@ -411,6 +444,7 @@ impl TypedEnvBackend for EnvInstance {
         self.get_property_little_endian::<E::Timestamp>(ext::now)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn account_id<E: Environment>(&mut self) -> E::AccountId {
         let mut scope = self.scoped_buffer();
 
@@ -441,6 +475,7 @@ impl TypedEnvBackend for EnvInstance {
         self.get_property_little_endian::<E::BlockNumber>(ext::block_number)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn minimum_balance<E: Environment>(&mut self) -> E::Balance {
         self.get_property_little_endian::<E::Balance>(ext::minimum_balance)
     }
@@ -561,6 +596,7 @@ impl TypedEnvBackend for EnvInstance {
         }
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn instantiate_contract<E, ContractRef, Args, RetType, Abi>(
         &mut self,
         params: &CreateParams<E, ContractRef, LimitParamsV2, Args, RetType, Abi>,
@@ -642,6 +678,7 @@ impl TypedEnvBackend for EnvInstance {
         )
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn terminate_contract(&mut self, beneficiary: H160) -> ! {
         let buffer: &mut [u8; 20] = self.scoped_buffer().take_encoded(&beneficiary)
             [0..20]
@@ -698,6 +735,7 @@ impl TypedEnvBackend for EnvInstance {
         <E::Balance as FromLittleEndian>::from_le_bytes(result)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn is_contract(&mut self, addr: &H160) -> bool {
         let mut scope = self.scoped_buffer();
         let enc_addr: &mut [u8; 20] =
@@ -705,6 +743,7 @@ impl TypedEnvBackend for EnvInstance {
         ext::is_contract(enc_addr)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn caller_is_origin<E>(&mut self) -> bool
     where
         E: Environment,
@@ -712,6 +751,7 @@ impl TypedEnvBackend for EnvInstance {
         ext::caller_is_origin()
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn caller_is_root<E>(&mut self) -> bool
     where
         E: Environment,
@@ -731,6 +771,7 @@ impl TypedEnvBackend for EnvInstance {
         Ok(hash)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn own_code_hash(&mut self) -> Result<H256> {
         let output: &mut [u8; 32] = &mut self
             .scoped_buffer()
@@ -742,6 +783,7 @@ impl TypedEnvBackend for EnvInstance {
         Ok(hash)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn call_runtime<E, Call>(&mut self, call: &Call) -> Result<()>
     where
         E: Environment,
@@ -752,6 +794,7 @@ impl TypedEnvBackend for EnvInstance {
         ext::call_runtime(enc_call).map_err(Into::into)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn xcm_execute<E, Call>(&mut self, msg: &VersionedXcm<Call>) -> Result<()>
     where
         E: Environment,
@@ -765,6 +808,7 @@ impl TypedEnvBackend for EnvInstance {
         ext::xcm_execute(enc_msg).map_err(Into::into)
     }
 
+    #[cfg(feature = "unstable-hostfn")]
     fn xcm_send<E, Call>(
         &mut self,
         dest: &xcm::VersionedLocation,
