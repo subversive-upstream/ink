@@ -38,11 +38,14 @@ mod ink_test;
 mod item_impls;
 mod metadata;
 mod selector;
-mod solidity;
+#[cfg(any(ink_abi = "sol", ink_abi = "all"))]
+mod sol;
 mod storage;
 mod storage_item;
 mod trait_def;
 
+#[cfg(any(ink_abi = "sol", ink_abi = "all"))]
+pub use self::sol::metadata::SolidityMetadata;
 pub use self::{
     arg_list::{
         generate_argument_list,
